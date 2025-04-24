@@ -1,0 +1,162 @@
+# .github/workflows/build-on-release.yml
+name: Build and Attach Assets
+
+# Trigger when a release is published (not drafted, not pre-released)
+# You could also use 'created' or 'prereleased' depending on your exact needs
+on:
+  release:
+    types: [published]
+  workflow_dispatch: # Allow manual triggering for testing (optional)
+
+env:
+  # Set the binary name, adjust as needed
+  BIN_NAME: riveter
+  # Set the Rust toolchain version
+  RUST_TOOLCHAIN: stable
+
+jobs:
+  build-binaries:
+    name: Build Release Binaries
+    strategy:
+      fail-fast: false # Keep running other matrix jobs even if one fails
+      matrix:
+        include:
+          # Linux GNU (glibc)
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact_suffix: ""
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact_suffix: "-arm64"
+            cross: true
+
+          # macOS
+          - target: x86_64-apple-darwin
+            os: macos-13 # Use an x86_64 runner
+            artifact_suffix: "-x86_64"
+          - target: aarch64-apple-darwin
+            os: macos-14 # Use an ARM runner (Apple Silicon)
+            artifact_suffix: "-arm64"
+
+          # Windows MSVC
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            artifact_suffix: ".exe"
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            artifact_suffix: "-arm64.exe"
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (${{ env.RUST_TOOLCHAIN }})
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: ${{ matrix.target }}
+
+      # --- Optional: Install cross-compilation dependencies (Linux -> Linux ARM) ---
+      - name: Install cross-compilation tools (Linux ARM)
+        if: matrix.cross && runner.os == 'Linux' && matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+
+      # --- Configure Linker (Linux -> Linux ARM) ---
+      - name: Set cross-linker (Linux ARM)
+        if: matrix.cross && runner.os == 'Linux' && matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      # --- Cache Cargo dependencies ---
+      - name: Cache Cargo registry and index
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+
+      # --- Build the binary ---
+      - name: Build binary
+        # Use the tag name from the release event for versioning if needed
+        # Example: cargo build --release --target ${{ matrix.target }} --features "version=${{ github.event.release.tag_name }}"
+        run: cargo build --verbose --release --target ${{ matrix.target }}
+
+      # --- Prepare artifact ---
+      - name: Prepare artifact name and path
+        id: prepare_artifact
+        shell: bash
+        run: |
+          ARTIFACT_DIR="dist"
+          mkdir -p $ARTIFACT_DIR
+
+          # Determine binary path and final name
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            BINARY_PATH="target/${{ matrix.target }}/release/${{ env.BIN_NAME }}.exe"
+            FINAL_NAME="${{ env.BIN_NAME }}-${{ matrix.target }}${{ matrix.artifact_suffix }}"
+            cp "$BINARY_PATH" "$ARTIFACT_DIR/$FINAL_NAME"
+            # Package as ZIP on Windows
+            ARCHIVE_NAME="${{ env.BIN_NAME }}-${{ github.event.release.tag_name }}-${{ matrix.target }}.zip"
+            cd $ARTIFACT_DIR
+            powershell Compress-Archive -Path "$FINAL_NAME" -DestinationPath "../$ARCHIVE_NAME"
+            cd ..
+          else # Linux or macOS
+            BINARY_PATH="target/${{ matrix.target }}/release/${{ env.BIN_NAME }}"
+            FINAL_NAME="${{ env.BIN_NAME }}-${{ matrix.target }}${{ matrix.artifact_suffix }}"
+            cp "$BINARY_PATH" "$ARTIFACT_DIR/$FINAL_NAME"
+            # Package as tar.gz on Linux/macOS
+            ARCHIVE_NAME="${{ env.BIN_NAME }}-${{ github.event.release.tag_name }}-${{ matrix.target }}.tar.gz"
+            tar czf "$ARCHIVE_NAME" -C $ARTIFACT_DIR "$FINAL_NAME"
+          fi
+
+          # Add README and LICENSE (optional)
+          # cp README.md LICENSE $ARTIFACT_DIR/
+          # Adjust tar/zip command accordingly
+
+          echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> $GITHUB_OUTPUT
+          echo "ARCHIVE_PATH=$ARCHIVE_NAME" >> $GITHUB_OUTPUT
+
+      # --- Upload artifact (for use in the next job) ---
+      - name: Upload artifact for release job
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.prepare_artifact.outputs.ARCHIVE_NAME }} # Use unique archive name as artifact name
+          path: ${{ steps.prepare_artifact.outputs.ARCHIVE_PATH }}
+
+  # --- Upload Assets to the Triggering Release ---
+  upload-assets:
+    name: Upload Assets to Release
+    needs: build-binaries # Run only after all builds succeed
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write # Need write permission to upload release assets
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/ # Download all artifacts into the 'artifacts' directory
+
+      - name: Display structure of downloaded files
+        run: ls -R artifacts/
+
+      - name: Upload assets to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Get the tag name from the release event that triggered the workflow
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          # Use gh release upload to upload all files from the subdirectories within artifacts/
+          # The subdirectories are named after the artifacts (our archive names)
+          # --clobber overwrites assets with the same name if the job is re-run
+          gh release upload "$TAG_NAME" artifacts/*/* --clobber

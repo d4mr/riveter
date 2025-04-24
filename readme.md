@@ -62,6 +62,13 @@ riveter [OPTIONS]
 
 By default, it processes the current directory (`.`) and outputs in text format to standard output.
 
+> [!TIP]
+> You can pipe the output to `pbcopy` on macOS to copy it to your clipboard
+>
+> ```bash
+> riveter -f xml | pbcopy
+> ```
+
 ### Options
 
 Here's the output from `riveter --help`:

@@ -1,7 +1,13 @@
 [package]
+
 name = "riveter"
 version = "0.1.0"
 edition = "2024"
+repository = "https://github.com/d4mr/riveter"
+homepage = "https://github.com/d4mr/riveter"
+license = "Apache-2.0"
+readme = "README.md"
+description = "A command-line utility to \"rivet\" together the structure and content of a project directory. It generates a combined overview suitable for providing context to Large Language Models (LLMs) or for documentation purposes."
 
 [dependencies]
 clap = { version = "4.5.37", features = ["derive"] }
