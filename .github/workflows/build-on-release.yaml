@@ -153,7 +153,7 @@ jobs:
 
       - name: Upload assets to GitHub Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Use the GitHub token to authenticate
           # Get the tag name from the release event that triggered the workflow
           TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
