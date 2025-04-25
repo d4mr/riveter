@@ -24,33 +24,29 @@ jobs:
           # Linux GNU (glibc)
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact_suffix: ""
             archive_suffix: ".tar.gz"
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact_suffix: "-arm64"
             archive_suffix: ".tar.gz"
             cross: true
 
           # macOS
           - target: x86_64-apple-darwin
             os: macos-13 # Use an x86_64 runner
-            artifact_suffix: "-x86_64"
             archive_suffix: ".tar.gz"
           - target: aarch64-apple-darwin
             os: macos-14 # Use an ARM runner (Apple Silicon)
-            archive_suffix: ".tar.gz"
             artifact_suffix: "-arm64"
 
           # Windows MSVC
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             archive_suffix: ".zip"
-            artifact_suffix: ".exe"
+            binary_suffix: ".exe"
           - target: aarch64-pc-windows-msvc
             os: windows-latest
             archive_suffix: ".zip"
-            artifact_suffix: "-arm64.exe"
+            binary_suffix: ".exe"
 
     runs-on: ${{ matrix.os }}
 
