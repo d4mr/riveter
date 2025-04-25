@@ -28,7 +28,7 @@ When working with LLMs, providing sufficient context about a codebase or project
 You can use [cargo-binstall](https://github.com/cargo-bins/cargo-binstall) to install a pre-built binary for your platform.
 
 ```bash
-cargo binstall riverter
+cargo binstall riveter
 ```
 
 ### From Source
