@@ -96,34 +96,46 @@ jobs:
         id: prepare_artifact
         shell: bash
         run: |
+          # Get the tag name (e.g., v0.1.0)
+          TAG_NAME="${{ github.event.release.tag_name }}"
+
+          # Define the staging directory
           ARTIFACT_DIR="dist"
           mkdir -p $ARTIFACT_DIR
 
-          # Determine binary path and final name
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            BINARY_PATH="target/${{ matrix.target }}/release/${{ env.BIN_NAME }}.exe"
-            FINAL_NAME="${{ env.BIN_NAME }}-${{ matrix.target }}${{ matrix.artifact_suffix }}"
-            cp "$BINARY_PATH" "$ARTIFACT_DIR/$FINAL_NAME"
-            # Package as ZIP on Windows
-            ARCHIVE_NAME="${{ env.BIN_NAME }}-${{ github.event.release.tag_name }}-${{ matrix.target }}.zip"
+          # Define the source path of the built binary
+          # matrix.binary_suffix is ".exe" on Windows, "" otherwise
+          SOURCE_BINARY_PATH="target/${{ matrix.target }}/release/${{ env.BIN_NAME }}${{ matrix.binary_suffix }}"
+
+          # --- THIS IS THE KEY PART for the name INSIDE the archive ---
+          # Define the desired simple name for the binary INSIDE the archive
+          DEST_BINARY_NAME="${{ env.BIN_NAME }}${{ matrix.binary_suffix }}" # e.g., "riveter" or "riveter.exe"
+
+          # Copy the built binary to the staging dir WITH the simple name
+          echo "Copying '$SOURCE_BINARY_PATH' to '$ARTIFACT_DIR/$DEST_BINARY_NAME'"
+          cp "$SOURCE_BINARY_PATH" "$ARTIFACT_DIR/$DEST_BINARY_NAME"
+
+          # Define the final ARCHIVE name using the binstall pattern
+          # matrix.archive_suffix is ".zip" on Windows, ".tar.gz" otherwise
+          ARCHIVE_NAME="${{ env.BIN_NAME }}-${TAG_NAME}-${{ matrix.target }}${{ matrix.archive_suffix }}" # e.g., "riveter-v0.1.0-x86_64-pc-windows-msvc.zip"
+          ARCHIVE_PATH="$ARCHIVE_NAME"
+
+          echo "Creating archive '$ARCHIVE_NAME' containing '$DEST_BINARY_NAME' at root level"
+
+          # Create the archive, ensuring the binary is at the root
+          if [[ "${{ matrix.archive_suffix }}" == ".zip" ]]; then
+            # Windows: Create zip containing only DEST_BINARY_NAME from ARTIFACT_DIR
             cd $ARTIFACT_DIR
-            powershell Compress-Archive -Path "$FINAL_NAME" -DestinationPath "../$ARCHIVE_NAME"
+            powershell Compress-Archive -Path "$DEST_BINARY_NAME" -DestinationPath "../$ARCHIVE_NAME"
             cd ..
-          else # Linux or macOS
-            BINARY_PATH="target/${{ matrix.target }}/release/${{ env.BIN_NAME }}"
-            FINAL_NAME="${{ env.BIN_NAME }}-${{ matrix.target }}${{ matrix.artifact_suffix }}"
-            cp "$BINARY_PATH" "$ARTIFACT_DIR/$FINAL_NAME"
-            # Package as tar.gz on Linux/macOS
-            ARCHIVE_NAME="${{ env.BIN_NAME }}-${{ github.event.release.tag_name }}-${{ matrix.target }}.tar.gz"
-            tar czf "$ARCHIVE_NAME" -C $ARTIFACT_DIR "$FINAL_NAME"
+          else # .tar.gz
+            # Linux/macOS: Create tar.gz containing only DEST_BINARY_NAME from ARTIFACT_DIR
+            # -C changes directory so the path inside the tar is just the filename
+            tar czf "$ARCHIVE_NAME" -C $ARTIFACT_DIR "$DEST_BINARY_NAME"
           fi
 
-          # Add README and LICENSE (optional)
-          # cp README.md LICENSE $ARTIFACT_DIR/
-          # Adjust tar/zip command accordingly
-
           echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> $GITHUB_OUTPUT
-          echo "ARCHIVE_PATH=$ARCHIVE_NAME" >> $GITHUB_OUTPUT
+          echo "ARCHIVE_PATH=$ARCHIVE_PATH" >> $GITHUB_OUTPUT
 
       # --- Upload artifact (for use in the next job) ---
       - name: Upload artifact for release job
