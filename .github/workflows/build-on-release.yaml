@@ -36,7 +36,7 @@ jobs:
             archive_suffix: ".tar.gz"
           - target: aarch64-apple-darwin
             os: macos-14 # Use an ARM runner (Apple Silicon)
-            artifact_suffix: "-arm64"
+            archive_suffix: ".tar.gz"
 
           # Windows MSVC
           - target: x86_64-pc-windows-msvc
